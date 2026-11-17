@@ -1,7 +1,6 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
 import {
   PortfolioChannelsIncluded,
   PortfolioGridBlock as PortfolioGridBlockProps,
@@ -10,8 +9,7 @@ import {
 import { castContent, SafeContent } from '@/lib/optimizely/types/typeUtils'
 import { Icon } from '../ui/Icon'
 
-// Local shape, defined here so no separate types file is needed
-interface SelectedPackage {
+export interface SelectedPackage {
   id: string
   name: string
   popular: boolean
@@ -22,25 +20,29 @@ interface SelectedPackage {
 }
 
 export const SELECTED_PACKAGE_KEY = 'selectedPackage'
+export const PACKAGE_SELECTED_EVENT = 'package-selected'
 
 export default function PortfolioGridBlock({
   title,
   description,
   items,
 }: PortfolioGridBlockProps) {
-  const router = useRouter()
   const [selectedPackage, setSelectedPackage] = useState<SelectedPackage | null>(null)
 
   const handleSelect = (pkg: SelectedPackage) => {
     setSelectedPackage(pkg)
     try {
       sessionStorage.setItem(SELECTED_PACKAGE_KEY, JSON.stringify(pkg))
-    } catch {
-      /* storage can be unavailable (private mode); the query param still works */
+    } catch (error) {
+      console.error('Unable to save the selected package.', error)
     }
-    router.push(`/packages?plan=${encodeURIComponent(pkg.id)}`)
+    window.dispatchEvent(
+      new CustomEvent<SelectedPackage>(PACKAGE_SELECTED_EVENT, {
+        detail: pkg,
+      }),
+    )
   }
-console.log('PortfolioGridBlock props:', { title, description, items })
+
   return (
     <section className="relative isolate left-1/2 right-1/2 -ml-[50vw] -mr-[50vw] w-screen bg-black px-4 py-16 text-white before:absolute before:inset-0 before:-z-10 before:bg-gradient-to-br before:from-[#050917] before:via-black before:to-[#0b1745] before:content-[''] lg:px-8">
       <div className="mx-auto mb-12 max-w-2xl text-center">
@@ -67,11 +69,17 @@ console.log('PortfolioGridBlock props:', { title, description, items })
             })
             .filter((name): name is string => Boolean(name))
 
+          const monthlyPriceText = String(pkgItem.monthlyPrices ?? '').match(
+            /\d[\d,]*(?:\.\d+)?/,
+          )?.[0]
+
           const pkg: SelectedPackage = {
             id: String(pkgItem.title ?? index).toLowerCase().replace(/\s+/g, '-'),
             name: String(pkgItem.title ?? ''),
             popular: Boolean(pkgItem.isPopular),
-            priceMonthly: Number(pkgItem.monthlyPrices) || 0,
+            priceMonthly: monthlyPriceText
+              ? Number(monthlyPriceText.replace(/,/g, ''))
+              : 0,
             channelsCount: String(pkgItem.channelsCount ?? ''),
             description: String(pkgItem.description ?? ''),
             highlights: channelNames,

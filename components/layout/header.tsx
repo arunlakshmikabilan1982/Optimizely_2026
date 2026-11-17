@@ -33,17 +33,23 @@ export async function Header({ locale }: { locale: string }) {
   const logoNode = (
     <Link
       href="/"
-      className="flex items-center gap-2 text-2xl font-black tracking-tight text-white focus-visible-custom rounded-md"
+      className="focus-visible-custom flex items-center gap-2 rounded-md text-2xl font-black tracking-tight text-white"
       aria-label="DIRECTV Home"
     >
       <span className="text-brand-blue flex items-center">
         {isImageLogo ? (
-          <Image src={logo as string} width={120} height={32} alt="DIRECTV" unoptimized />
+          <Image
+            src={logo as string}
+            width={120}
+            height={32}
+            alt="DIRECTV"
+            unoptimized
+          />
         ) : (
           logo || 'DIRECTV'
         )}
         <svg
-          className="w-6 h-6 ml-1 text-brand-accent"
+          className="text-brand-accent ml-1 h-6 w-6"
           viewBox="0 0 24 24"
           fill="currentColor"
           aria-hidden="true"
@@ -55,14 +61,14 @@ export async function Header({ locale }: { locale: string }) {
   )
 
   return (
-    <header className="sticky top-0 z-40 bg-black/90 backdrop-blur-md border-b border-white/10 px-4 lg:px-8 py-3.5 transition-all">
+    <header className="sticky top-0 z-40 border-b border-white/10 bg-black/90 px-4 py-3.5 backdrop-blur-md transition-all lg:px-8">
       <HeaderClient
         logo={logoNode}
         links={links}
         ctaHref={ctaHref ?? '/packages'}
         ctaText={ctaText ?? 'Get DIRECTV'}
+        locale={locales}
       />
     </header>
   )
 }
- 

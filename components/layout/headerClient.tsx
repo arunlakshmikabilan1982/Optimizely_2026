@@ -3,6 +3,14 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState, type ReactNode } from 'react'
+import { authService } from '@/lib/auth/auth-client.service'
+import type { AuthUser } from '@/lib/auth/auth-payloads'
+import {
+  PACKAGE_SELECTED_EVENT,
+  SELECTED_PACKAGE_KEY,
+  type SelectedPackage,
+} from '@/components/block/portfolio-grid-block'
+import CheckoutPage from '@/components/checkout/checkout-page'
 
 type NavLink = { label: string; href: string }
 
@@ -11,13 +19,43 @@ type HeaderClientProps = {
   links: NavLink[]
   ctaHref: string
   ctaText: string
+  locale: string
 }
 
 type ZipStatus = { ok: boolean; message: string }
 
+function isSelectedPackage(value: unknown): value is SelectedPackage {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+
+  const selectedPackage = value as Record<string, unknown>
+  return (
+    typeof selectedPackage.id === 'string' &&
+    typeof selectedPackage.name === 'string' &&
+    typeof selectedPackage.popular === 'boolean' &&
+    typeof selectedPackage.priceMonthly === 'number' &&
+    typeof selectedPackage.channelsCount === 'string' &&
+    typeof selectedPackage.description === 'string' &&
+    Array.isArray(selectedPackage.highlights) &&
+    selectedPackage.highlights.every(
+      (highlight) => typeof highlight === 'string'
+    )
+  )
+}
+
 function MapPinIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z" />
       <circle cx="12" cy="10" r="3" />
     </svg>
@@ -26,7 +64,16 @@ function MapPinIcon({ className }: { className?: string }) {
 
 function BagIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
       <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z" />
       <path d="M3 6h18" />
       <path d="M16 10a4 4 0 0 1-8 0" />
@@ -36,7 +83,15 @@ function BagIcon({ className }: { className?: string }) {
 
 function MenuIcon({ open, className }: { open: boolean; className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden="true">
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
       {open ? (
         <path d="M6 6l12 12M18 6 6 18" />
       ) : (
@@ -46,7 +101,13 @@ function MenuIcon({ open, className }: { open: boolean; className?: string }) {
   )
 }
 
-export function HeaderClient({ logo, links, ctaHref, ctaText }: HeaderClientProps) {
+export function HeaderClient({
+  logo,
+  links,
+  ctaHref,
+  ctaText,
+  locale,
+}: HeaderClientProps) {
   const pathname = usePathname()
 
   const [zipCode, setZipCode] = useState('90210')
@@ -55,9 +116,68 @@ export function HeaderClient({ logo, links, ctaHref, ctaText }: HeaderClientProp
   const [zipStatus, setZipStatus] = useState<ZipStatus | null>(null)
 
   const [isCartOpen, setIsCartOpen] = useState(false)
-  const [cartCount] = useState(1)
+  const [selectedPackage, setSelectedPackage] =
+    useState<SelectedPackage | null>(null)
+  const cartCount = selectedPackage ? 1 : 0
 
   const [isMenuOpen, setIsMenuOpen] = useState(false)
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null)
+  const [authMessage, setAuthMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    try {
+      const savedPackage = sessionStorage.getItem(SELECTED_PACKAGE_KEY)
+      if (savedPackage) {
+        const parsedPackage: unknown = JSON.parse(savedPackage)
+        if (isSelectedPackage(parsedPackage)) {
+          setSelectedPackage(parsedPackage)
+        } else {
+          console.error('The saved package selection has an invalid format.')
+          sessionStorage.removeItem(SELECTED_PACKAGE_KEY)
+        }
+      }
+    } catch (error) {
+      console.error('Unable to restore the selected package.', error)
+    }
+
+    const handlePackageSelected = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail
+      if (!isSelectedPackage(detail)) {
+        console.error('The selected package event has an invalid format.')
+        return
+      }
+
+      setSelectedPackage(detail)
+      setIsCartOpen(true)
+    }
+
+    window.addEventListener(PACKAGE_SELECTED_EVENT, handlePackageSelected)
+    return () =>
+      window.removeEventListener(PACKAGE_SELECTED_EVENT, handlePackageSelected)
+  }, [])
+
+  useEffect(() => {
+    let active = true
+
+    authService
+      .getSession()
+      .then(({ user }) => {
+        if (active) {
+          setAuthUser(user)
+          setAuthMessage(null)
+        }
+      })
+      .catch((error: unknown) => {
+        console.error('Unable to load the authentication session.', error)
+        if (active) {
+          setAuthMessage('Account status is unavailable.')
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [pathname])
 
   // Close menus on route change
   useEffect(() => {
@@ -77,37 +197,81 @@ export function HeaderClient({ logo, links, ctaHref, ctaText }: HeaderClientProp
   }, [])
 
   const isActive = (href: string) =>
-    href === '/' ? pathname === '/' : pathname === href || pathname?.startsWith(`${href}/`)
+    href === '/'
+      ? pathname === '/'
+      : pathname === href || pathname?.startsWith(`${href}/`)
 
   const submitZip = (e: React.FormEvent) => {
     e.preventDefault()
     if (!/^\d{5}$/.test(tempZip)) {
-      setZipStatus({ ok: false, message: 'Please enter a valid 5-digit ZIP code.' })
+      setZipStatus({
+        ok: false,
+        message: 'Please enter a valid 5-digit ZIP code.',
+      })
       return
     }
     setZipCode(tempZip)
-    setZipStatus({ ok: true, message: `Showing channels available in ${tempZip}.` })
+    setZipStatus({
+      ok: true,
+      message: `Showing channels available in ${tempZip}.`,
+    })
     setTimeout(() => {
       setIsZipModalOpen(false)
       setZipStatus(null)
     }, 900)
   }
 
+  const signOut = async () => {
+    try {
+      await authService.logout()
+      setAuthUser(null)
+      setAuthMessage(null)
+    } catch (error) {
+      console.error('Unable to sign out.', error)
+      setAuthMessage('Unable to sign out. Please try again.')
+    }
+  }
+
+  const authControls = authUser ? (
+    <>
+      <span className="max-w-36 truncate text-sm font-medium text-white">
+        {authUser.name || authUser.email || 'My account'}
+      </span>
+      <button
+        type="button"
+        onClick={signOut}
+        className="focus-visible-custom inline-flex items-center justify-center rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/10"
+      >
+        Sign out
+      </button>
+    </>
+  ) : (
+    <Link
+      href={`/${locale}/login`}
+      className="bg-brand-blue shadow-brand-blue/30 focus-visible-custom inline-flex items-center justify-center rounded-full px-5 py-2 text-sm font-semibold text-white shadow-md transition-all hover:bg-blue-600"
+    >
+      Sign In
+    </Link>
+  )
+
   return (
     <>
-      <div className="max-w-7xl mx-auto flex items-center justify-between">
+      <div className="mx-auto flex max-w-7xl items-center justify-between">
         <div className="flex items-center gap-8">
           {logo}
-          <nav className="hidden md:flex items-center space-x-1 lg:space-x-2" aria-label="Main">
+          <nav
+            className="hidden items-center space-x-1 md:flex lg:space-x-2"
+            aria-label="Main"
+          >
             {links.map((item) => (
               <Link
                 key={`${item.href}-${item.label}`}
                 href={item.href}
                 aria-current={isActive(item.href) ? 'page' : undefined}
-                className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all focus-visible-custom ${
+                className={`focus-visible-custom rounded-full px-3 py-1.5 text-sm font-medium transition-all ${
                   isActive(item.href)
-                    ? 'bg-brand-blue text-white shadow-lg shadow-brand-blue/30'
-                    : 'text-gray-300 hover:text-white hover:bg-white/5'
+                    ? 'bg-brand-blue shadow-brand-blue/30 text-white shadow-lg'
+                    : 'text-gray-300 hover:bg-white/5 hover:text-white'
                 }`}
               >
                 {item.label}
@@ -123,10 +287,10 @@ export function HeaderClient({ logo, links, ctaHref, ctaText }: HeaderClientProp
               setTempZip(zipCode)
               setIsZipModalOpen(true)
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-brand-deepNavy border border-white/15 text-xs lg:text-sm hover:border-brand-blue transition-colors focus-visible-custom text-gray-200"
+            className="bg-brand-deepNavy hover:border-brand-blue focus-visible-custom flex items-center gap-1.5 rounded-full border border-white/15 px-3 py-1.5 text-xs text-gray-200 transition-colors lg:text-sm"
             title="Check local channel availability"
           >
-            <MapPinIcon className="w-4 h-4 text-brand-accent" />
+            <MapPinIcon className="text-brand-accent h-4 w-4" />
             <span>
               Zip: <strong className="text-white">{zipCode}</strong>
             </span>
@@ -134,46 +298,51 @@ export function HeaderClient({ logo, links, ctaHref, ctaText }: HeaderClientProp
           <button
             type="button"
             onClick={() => setIsCartOpen(true)}
-            className="relative p-2 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 transition-colors focus-visible-custom"
+            className="focus-visible-custom relative rounded-full border border-white/10 bg-white/5 p-2 transition-colors hover:bg-white/10"
             aria-label="View Order Summary"
           >
-            <BagIcon className="w-5 h-5 text-white" />
-            <span className="absolute -top-1 -right-1 bg-brand-blue text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center border-2 border-black">
+            <BagIcon className="h-5 w-5 text-white" />
+            <span className="bg-brand-blue absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-black text-[10px] font-bold text-white">
               {cartCount}
             </span>
           </button>
 
           <Link
             href={ctaHref}
-            className="hidden sm:inline-flex items-center justify-center px-5 py-2 rounded-full bg-brand-blue hover:bg-blue-600 text-white font-semibold text-sm transition-all shadow-md shadow-brand-blue/30 focus-visible-custom"
+            className="bg-brand-blue shadow-brand-blue/30 focus-visible-custom hidden items-center justify-center rounded-full px-5 py-2 text-sm font-semibold text-white shadow-md transition-all hover:bg-blue-600 sm:inline-flex"
           >
             {ctaText}
           </Link>
-          <button style={{color: 'white'}} className="hidden sm:inline-flex items-center justify-center px-5 py-2 rounded-full bg-brand-blue hover:bg-blue-600 text-white font-semibold text-sm transition-all shadow-md shadow-brand-blue/30 focus-visible-custom">
-            sign in
-          </button>
+          <div className="hidden items-center gap-3 sm:flex">
+            {authControls}
+          </div>
 
           <button
             type="button"
             onClick={() => setIsMenuOpen((v) => !v)}
-            className="md:hidden p-2 rounded-full bg-white/5 border border-white/10 text-white focus-visible-custom"
+            className="focus-visible-custom rounded-full border border-white/10 bg-white/5 p-2 text-white md:hidden"
             aria-label={isMenuOpen ? 'Close menu' : 'Open menu'}
             aria-expanded={isMenuOpen}
           >
-            <MenuIcon open={isMenuOpen} className="w-5 h-5" />
+            <MenuIcon open={isMenuOpen} className="h-5 w-5" />
           </button>
         </div>
       </div>
 
       {/* Mobile nav */}
       {isMenuOpen && (
-        <nav className="md:hidden max-w-7xl mx-auto mt-3 flex flex-col gap-1 border-t border-white/10 pt-3" aria-label="Mobile">
+        <nav
+          className="mx-auto mt-3 flex max-w-7xl flex-col gap-1 border-t border-white/10 pt-3 md:hidden"
+          aria-label="Mobile"
+        >
           {links.map((item) => (
             <Link
               key={`m-${item.href}-${item.label}`}
               href={item.href}
-              className={`px-3 py-2 rounded-lg text-sm font-medium ${
-                isActive(item.href) ? 'bg-brand-blue text-white' : 'text-gray-300 hover:bg-white/5 hover:text-white'
+              className={`rounded-lg px-3 py-2 text-sm font-medium ${
+                isActive(item.href)
+                  ? 'bg-brand-blue text-white'
+                  : 'text-gray-300 hover:bg-white/5 hover:text-white'
               }`}
             >
               {item.label}
@@ -181,11 +350,22 @@ export function HeaderClient({ logo, links, ctaHref, ctaText }: HeaderClientProp
           ))}
           <Link
             href={ctaHref}
-            className="mt-2 sm:hidden inline-flex items-center justify-center px-5 py-2 rounded-full bg-brand-blue text-white font-semibold text-sm"
+            className="bg-brand-blue mt-2 inline-flex items-center justify-center rounded-full px-5 py-2 text-sm font-semibold text-white sm:hidden"
           >
             {ctaText}
           </Link>
+          <div className="mt-2 flex items-center gap-3 px-3 py-2 sm:hidden">
+            {authControls}
+          </div>
         </nav>
+      )}
+      {authMessage && (
+        <p
+          className="mx-auto max-w-7xl px-4 pt-2 text-right text-xs text-red-400"
+          role="status"
+        >
+          {authMessage}
+        </p>
       )}
 
       {/* ZIP modal */}
@@ -200,23 +380,28 @@ export function HeaderClient({ logo, links, ctaHref, ctaText }: HeaderClientProp
           <form
             onSubmit={submitZip}
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-sm rounded-2xl bg-brand-deepNavy border border-white/15 p-6 shadow-2xl"
+            className="bg-brand-deepNavy w-full max-w-sm rounded-2xl border border-white/15 p-6 shadow-2xl"
           >
             <h2 id="zip-title" className="text-lg font-bold text-white">
               Check channel availability
             </h2>
-            <p className="mt-1 text-sm text-gray-400">Enter your ZIP code to see local channels.</p>
+            <p className="mt-1 text-sm text-gray-400">
+              Enter your ZIP code to see local channels.
+            </p>
             <input
               autoFocus
               inputMode="numeric"
               maxLength={5}
               value={tempZip}
               onChange={(e) => setTempZip(e.target.value.replace(/\D/g, ''))}
-              className="mt-4 w-full rounded-lg bg-black/60 border border-white/15 px-3 py-2 text-white focus:outline-none focus:border-brand-blue"
+              className="focus:border-brand-blue mt-4 w-full rounded-lg border border-white/15 bg-black/60 px-3 py-2 text-white focus:outline-none"
               aria-label="ZIP code"
             />
             {zipStatus && (
-              <p className={`mt-2 text-sm ${zipStatus.ok ? 'text-green-400' : 'text-red-400'}`} role="status">
+              <p
+                className={`mt-2 text-sm ${zipStatus.ok ? 'text-green-400' : 'text-red-400'}`}
+                role="status"
+              >
                 {zipStatus.message}
               </p>
             )}
@@ -224,13 +409,13 @@ export function HeaderClient({ logo, links, ctaHref, ctaText }: HeaderClientProp
               <button
                 type="button"
                 onClick={() => setIsZipModalOpen(false)}
-                className="px-4 py-2 rounded-full text-sm text-gray-300 hover:bg-white/5"
+                className="rounded-full px-4 py-2 text-sm text-gray-300 hover:bg-white/5"
               >
                 Cancel
               </button>
               <button
                 type="submit"
-                className="px-5 py-2 rounded-full bg-brand-blue hover:bg-blue-600 text-white text-sm font-semibold"
+                className="bg-brand-blue rounded-full px-5 py-2 text-sm font-semibold text-white hover:bg-blue-600"
               >
                 Check
               </button>
@@ -239,41 +424,15 @@ export function HeaderClient({ logo, links, ctaHref, ctaText }: HeaderClientProp
         </div>
       )}
 
-      {/* Cart drawer */}
       {isCartOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/70" onClick={() => setIsCartOpen(false)}>
-          <aside
-            role="dialog"
-            aria-modal="true"
-            aria-label="Order summary"
-            onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md h-full bg-brand-deepNavy border-l border-white/15 p-6 flex flex-col"
-          >
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-white">Order Summary</h2>
-              <button
-                type="button"
-                onClick={() => setIsCartOpen(false)}
-                className="text-gray-400 hover:text-white"
-                aria-label="Close order summary"
-              >
-                ✕
-              </button>
-            </div>
-            <p className="mt-6 text-sm text-gray-400">
-                Your order includes 1 package and {cartCount - 1} add-on{cartCount - 1 !== 1 ? 's' : ''}.
-            </p>
-            <Link
-              href="/packages"
-              onClick={() => setIsCartOpen(false)}
-              className="mt-auto inline-flex items-center justify-center px-5 py-3 rounded-full bg-brand-blue hover:bg-blue-600 text-white font-semibold text-sm"
-            >
-              Continue to packages
-            </Link>
-          </aside>
-        </div>
+        <CheckoutPage
+          locale={locale}
+          initialPackage={selectedPackage}
+          initialStep="cart"
+          zipCode={zipCode}
+          onClose={() => setIsCartOpen(false)}
+        />
       )}
     </>
   )
 }
- 
