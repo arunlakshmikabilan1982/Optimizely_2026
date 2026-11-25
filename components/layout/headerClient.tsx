@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { authService } from '@/lib/auth/auth-client.service'
 import type { AuthUser } from '@/lib/auth/auth-payloads'
 import {
@@ -370,58 +371,61 @@ export function HeaderClient({
 
       {/* ZIP modal */}
       {isZipModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="zip-title"
-          onClick={() => setIsZipModalOpen(false)}
-        >
-          <form
-            onSubmit={submitZip}
-            onClick={(e) => e.stopPropagation()}
-            className="bg-brand-deepNavy w-full max-w-sm rounded-2xl border border-white/15 p-6 shadow-2xl"
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4 backdrop-blur-md"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="zip-title"
+            onClick={() => setIsZipModalOpen(false)}
           >
-            <h2 id="zip-title" className="text-lg font-bold text-white">
-              Check channel availability
-            </h2>
-            <p className="mt-1 text-sm text-gray-400">
-              Enter your ZIP code to see local channels.
-            </p>
-            <input
-              autoFocus
-              inputMode="numeric"
-              maxLength={5}
-              value={tempZip}
-              onChange={(e) => setTempZip(e.target.value.replace(/\D/g, ''))}
-              className="focus:border-brand-blue mt-4 w-full rounded-lg border border-white/15 bg-black/60 px-3 py-2 text-white focus:outline-none"
-              aria-label="ZIP code"
-            />
-            {zipStatus && (
-              <p
-                className={`mt-2 text-sm ${zipStatus.ok ? 'text-green-400' : 'text-red-400'}`}
-                role="status"
-              >
-                {zipStatus.message}
+            <form
+              onSubmit={submitZip}
+              onClick={(e) => e.stopPropagation()}
+              className="bg-brand-deepNavy w-full max-w-sm rounded-2xl border border-white/15 p-6 shadow-2xl"
+            >
+              <h2 id="zip-title" className="text-lg font-bold text-white">
+                Check channel availability
+              </h2>
+              <p className="mt-1 text-sm text-gray-400">
+                Enter your ZIP code to see local channels.
               </p>
-            )}
-            <div className="mt-5 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setIsZipModalOpen(false)}
-                className="rounded-full px-4 py-2 text-sm text-gray-300 hover:bg-white/5"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="bg-brand-blue rounded-full px-5 py-2 text-sm font-semibold text-white hover:bg-blue-600"
-              >
-                Check
-              </button>
-            </div>
-          </form>
-        </div>
+              <input
+                autoFocus
+                inputMode="numeric"
+                maxLength={5}
+                value={tempZip}
+                onChange={(e) => setTempZip(e.target.value.replace(/\D/g, ''))}
+                className="focus:border-brand-blue mt-4 w-full rounded-lg border border-white/15 bg-black/60 px-3 py-2 text-white focus:outline-none"
+                aria-label="ZIP code"
+              />
+              {zipStatus && (
+                <p
+                  className={`mt-2 text-sm ${zipStatus.ok ? 'text-green-400' : 'text-red-400'}`}
+                  role="status"
+                >
+                  {zipStatus.message}
+                </p>
+              )}
+              <div className="mt-5 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsZipModalOpen(false)}
+                  className="rounded-full px-4 py-2 text-sm text-gray-300 hover:bg-white/5"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="bg-brand-blue rounded-full px-5 py-2 text-sm font-semibold text-white hover:bg-blue-600"
+                >
+                  Check
+                </button>
+              </div>
+            </form>
+          </div>,
+          document.body
+        )
       )}
 
       {isCartOpen && (
