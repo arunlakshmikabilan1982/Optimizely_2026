@@ -8,10 +8,18 @@ fragment HeroBlockFragment on HeroBlock {
   exploreAllPackagesDealsCTA {
     text
     title
+    url {
+      default
+      base
+    }
   }
   viewLiveChannelGuideCTA {
     text
     title
+    url {
+      default
+      base
+    }
   }
 }
 

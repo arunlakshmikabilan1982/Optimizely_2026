@@ -36,18 +36,18 @@ console.log('HeroBlockProps:', { description});
 
         <div className="flex flex-col items-center justify-center gap-4 sm:flex-row">
           <Link
-            href="/packages"
+            href={exploreAllPackagesDealsCTA?.url?.default || '/packages'}
             className="flex w-full items-center justify-center gap-2 rounded-full bg-[#006dff] px-8 py-4 text-base font-bold text-white shadow-xl shadow-[#006dff]/30 transition-all hover:bg-blue-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 sm:w-auto"
           >
-           <span>Explore All Packages & Deals</span>
+           <span>{exploreAllPackagesDealsCTA?.text}</span>
             <Icon name="arrow-right" className="w-5 h-5" />
           </Link>
           <Link
-            href="/guide"
+            href={viewLiveChannelGuideCTA?.url?.default || '/channels'}
             className="flex w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-white/10 px-8 py-4 text-base font-semibold text-white transition-all hover:bg-white/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-300 sm:w-auto"
           >
             <Icon name="tv" className="h-5 w-5 text-sky-300" />
-          <span>View Live Channel Guide</span>
+          <span>{viewLiveChannelGuideCTA?.text}</span>
           </Link>
         </div>
       </div>

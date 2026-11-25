@@ -680,7 +680,7 @@ export default function CheckoutPage({
                   </div>
                 </dl>
                 <Link
-                  href={`/${locale}`}
+                  href={`/channels`}
                   onClick={closeDrawer}
                   className="mt-4 flex w-full items-center justify-center rounded-full bg-[#0875ff] px-5 py-3 text-sm font-bold shadow-lg shadow-blue-500/30 transition-colors hover:bg-blue-600"
                 >
