@@ -13,8 +13,18 @@ import {
   type SelectedPackage,
 } from '@/components/block/portfolio-grid-block'
 import { Icon } from '@/components/ui/Icon'
+import {
+  formatCardNumber,
+  getBillingZipError,
+  getCardBrand,
+  getCardNumberError,
+  getCvvError,
+  getExpirationError,
+} from '@/lib/utils/payment-validation'
 
 type CheckoutStep = 'cart' | 'checkout' | 'otp' | 'processing' | 'success'
+type PaymentMethod = 'card' | 'paypal' | 'apple-pay' | 'google-pay'
+type PaymentErrors = Partial<Record<keyof CheckoutFormValues, string>>
 
 type CheckoutFormValues = {
   fullName: string
@@ -32,9 +42,9 @@ type CheckoutReceipt = {
     email: string
   }
   paymentMethod: {
-    type: 'card'
-    last4: string
-    expiration: string
+    type: PaymentMethod
+    last4?: string
+    expiration?: string
   }
   billing: {
     zipCode: string
@@ -91,6 +101,18 @@ function isCheckoutReceipt(value: unknown): value is CheckoutReceipt {
   const account = receipt.account
   const paymentMethod = receipt.paymentMethod
   const billing = receipt.billing
+  const paymentMethodRecord =
+    typeof paymentMethod === 'object' && paymentMethod !== null
+      ? (paymentMethod as Record<string, unknown>)
+      : null
+  const paymentType = paymentMethodRecord?.type
+  const validPaymentMethod =
+    paymentType === 'card'
+      ? typeof paymentMethodRecord?.last4 === 'string' &&
+        typeof paymentMethodRecord.expiration === 'string'
+      : paymentType === 'paypal' ||
+        paymentType === 'apple-pay' ||
+        paymentType === 'google-pay'
 
   return (
     typeof receipt.transactionId === 'string' &&
@@ -100,14 +122,8 @@ function isCheckoutReceipt(value: unknown): value is CheckoutReceipt {
     typeof account.fullName === 'string' &&
     'email' in account &&
     typeof account.email === 'string' &&
-    typeof paymentMethod === 'object' &&
-    paymentMethod !== null &&
-    'type' in paymentMethod &&
-    paymentMethod.type === 'card' &&
-    'last4' in paymentMethod &&
-    typeof paymentMethod.last4 === 'string' &&
-    'expiration' in paymentMethod &&
-    typeof paymentMethod.expiration === 'string' &&
+    paymentMethodRecord !== null &&
+    validPaymentMethod &&
     typeof billing === 'object' &&
     billing !== null &&
     'zipCode' in billing &&
@@ -124,6 +140,19 @@ const initialForm: CheckoutFormValues = {
   expiration: '',
   cvv: '',
   billingZip: '',
+}
+
+const paymentOptions: { value: PaymentMethod; label: string }[] = [
+  { value: 'card', label: 'Credit or Debit Card' },
+  { value: 'paypal', label: 'PayPal' },
+  { value: 'apple-pay', label: 'Apple Pay' },
+  { value: 'google-pay', label: 'Google Pay' },
+]
+const paymentMethodLabels: Record<PaymentMethod, string> = {
+  card: 'Credit or debit card',
+  paypal: 'PayPal',
+  'apple-pay': 'Apple Pay',
+  'google-pay': 'Google Pay',
 }
 
 export default function CheckoutPage({
@@ -144,6 +173,8 @@ export default function CheckoutPage({
   )
   const [step, setStep] = useState<CheckoutStep>(initialStep)
   const [form, setForm] = useState(initialForm)
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('card')
+  const [paymentErrors, setPaymentErrors] = useState<PaymentErrors>({})
   const [otp, setOtp] = useState('')
   const [receipt, setReceipt] = useState<CheckoutReceipt | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -222,6 +253,8 @@ export default function CheckoutPage({
 
   const updateForm = (field: keyof CheckoutFormValues, value: string) => {
     setForm((current) => ({ ...current, [field]: value }))
+    setPaymentErrors((current) => ({ ...current, [field]: undefined }))
+    setErrorMessage(null)
   }
 
   const clearSavedPackage = () => {
@@ -271,6 +304,29 @@ export default function CheckoutPage({
     event.preventDefault()
     if (!selectedPackage) return
 
+    const errors: PaymentErrors = {}
+    if (!form.fullName.trim()) errors.fullName = 'Enter your full name.'
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      errors.email = 'Enter a valid email address.'
+    }
+    const billingZipError = getBillingZipError(form.billingZip)
+    if (billingZipError) errors.billingZip = billingZipError
+
+    if (paymentMethod === 'card') {
+      const cardNumberError = getCardNumberError(form.cardNumber)
+      const expirationError = getExpirationError(form.expiration)
+      const cvvError = getCvvError(
+        form.cvv,
+        getCardBrand(form.cardNumber.replace(/\D/g, ''))
+      )
+      if (cardNumberError) errors.cardNumber = cardNumberError
+      if (expirationError) errors.expiration = expirationError
+      if (cvvError) errors.cvv = cvvError
+    }
+
+    setPaymentErrors(errors)
+    if (Object.keys(errors).length > 0) return
+
     setErrorMessage(null)
     setStep('otp')
   }
@@ -290,6 +346,7 @@ export default function CheckoutPage({
           ...form,
           otp,
           amount: totalPrice,
+          paymentMethod,
         }),
       })
       const result: unknown = await response.json()
@@ -523,6 +580,7 @@ export default function CheckoutPage({
                 <h2 className="mb-2 text-base font-bold">Express Checkout</h2>
                 <form
                   id="checkout-form"
+                  autoComplete="off"
                   onSubmit={continueToOtp}
                   className="space-y-3 rounded-xl border border-white/10 bg-[#171d30] p-3"
                 >
@@ -543,6 +601,11 @@ export default function CheckoutPage({
                           className="mt-1 w-full rounded-lg border border-white/10 bg-[#070b18] px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
                         />
                       </label>
+                      {paymentErrors.fullName && (
+                        <p className="text-xs text-red-300" role="alert">
+                          {paymentErrors.fullName}
+                        </p>
+                      )}
                       <label className="block text-xs text-gray-300">
                         Email Address
                         <input
@@ -556,6 +619,11 @@ export default function CheckoutPage({
                           className="mt-1 w-full rounded-lg border border-white/10 bg-[#070b18] px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
                         />
                       </label>
+                      {paymentErrors.email && (
+                        <p className="text-xs text-red-300" role="alert">
+                          {paymentErrors.email}
+                        </p>
+                      )}
                     </div>
                   </section>
 
@@ -567,104 +635,206 @@ export default function CheckoutPage({
                       Demo checkout only. No payment is processed. Do not enter
                       real card details.
                     </p>
-                    <div
-                      className="mb-2 flex items-center gap-1.5 text-[9px] font-extrabold italic"
-                      aria-label="Accepted payment methods"
-                    >
-                      <span className="rounded bg-white px-1.5 py-0.5 text-blue-900">
-                        VISA
-                      </span>
-                      <span className="rounded bg-white px-1.5 py-0.5 text-red-600">
-                        Mastercard
-                      </span>
-                      <span className="rounded bg-white px-1.5 py-0.5 text-sky-800">
-                        AMEX
-                      </span>
-                      <span className="rounded bg-white px-1.5 py-0.5 text-blue-600">
-                        DISCOVER
-                      </span>
-                    </div>
-                    <div className="space-y-2">
-                      <label className="block text-xs text-gray-300">
-                        Card Number
-                        <input
-                          inputMode="numeric"
-                          autoComplete="cc-number"
-                          required
-                          maxLength={23}
-                          value={form.cardNumber}
-                          onChange={(event) =>
-                            updateForm(
-                              'cardNumber',
-                              event.target.value.replace(/[^\d ]/g, '')
-                            )
-                          }
-                          placeholder="•••• •••• •••• ••••"
-                          className="mt-1 w-full rounded-lg border border-white/10 bg-[#070b18] px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                        />
-                      </label>
+                    <fieldset>
+                      <legend className="sr-only">Choose a payment method</legend>
                       <div className="grid grid-cols-2 gap-2">
-                        <label className="block text-xs text-gray-300">
-                          Expiration
-                          <input
-                            inputMode="numeric"
-                            autoComplete="cc-exp"
-                            required
-                            maxLength={5}
-                            value={form.expiration}
-                            onChange={(event) => {
-                              const digits = event.target.value
-                                .replace(/\D/g, '')
-                                .slice(0, 4)
-                              updateForm(
-                                'expiration',
-                                digits.length > 2
-                                  ? `${digits.slice(0, 2)}/${digits.slice(2)}`
-                                  : digits
-                              )
-                            }}
-                            placeholder="MM/YY"
-                            pattern="(0[1-9]|1[0-2])\/\d{2}"
-                            className="mt-1 w-full rounded-lg border border-white/10 bg-[#070b18] px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                          />
-                        </label>
-                        <label className="block text-xs text-gray-300">
-                          CVV
-                          <input
-                            inputMode="numeric"
-                            autoComplete="cc-csc"
-                            required
-                            maxLength={4}
-                            value={form.cvv}
-                            onChange={(event) =>
-                              updateForm(
-                                'cvv',
-                                event.target.value.replace(/\D/g, '')
-                              )
-                            }
-                            placeholder="CVV"
-                            className="mt-1 w-full rounded-lg border border-white/10 bg-[#070b18] px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
-                          />
-                        </label>
+                        {paymentOptions.map((option) => (
+                          <label
+                            key={option.value}
+                            className={`flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-xs ${
+                              paymentMethod === option.value
+                                ? 'border-sky-400 bg-sky-400/10 text-white'
+                                : 'border-white/10 bg-[#070b18] text-gray-300'
+                            }`}
+                          >
+                            <input
+                              type="radio"
+                              name="paymentMethod"
+                              value={option.value}
+                              checked={paymentMethod === option.value}
+                              onChange={() => {
+                                setPaymentMethod(option.value)
+                                setPaymentErrors({})
+                                setErrorMessage(null)
+                              }}
+                            />
+                            {option.label}
+                          </label>
+                        ))}
                       </div>
+                    </fieldset>
+
+                    {paymentMethod === 'card' ? (
+                      <>
+                        <div
+                          className="mb-2 mt-3 flex items-center gap-1.5 text-[9px] font-extrabold italic"
+                          aria-label="Accepted card networks"
+                        >
+                          <span className="rounded bg-white px-1.5 py-0.5 text-blue-900">VISA</span>
+                          <span className="rounded bg-white px-1.5 py-0.5 text-red-600">Mastercard</span>
+                          <span className="rounded bg-white px-1.5 py-0.5 text-sky-800">AMEX</span>
+                          <span className="rounded bg-white px-1.5 py-0.5 text-blue-600">DISCOVER</span>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="block text-xs text-gray-300">
+                            Card Number
+                            {form.cardNumber &&
+                              getCardBrand(form.cardNumber.replace(/\D/g, '')) !==
+                                'Unknown' &&
+                              ` (${getCardBrand(form.cardNumber.replace(/\D/g, ''))})`}
+                            <input
+                              inputMode="numeric"
+                              autoComplete="off"
+                              maxLength={23}
+                              value={form.cardNumber}
+                              aria-invalid={Boolean(paymentErrors.cardNumber)}
+                              aria-describedby={
+                                paymentErrors.cardNumber
+                                  ? 'card-number-error'
+                                  : undefined
+                              }
+                              onChange={(event) => {
+                                const digits = event.target.value
+                                  .replace(/\D/g, '')
+                                  .slice(0, 19)
+                                updateForm('cardNumber', formatCardNumber(digits))
+                              }}
+                              placeholder="•••• •••• •••• ••••"
+                              className="mt-1 w-full rounded-lg border border-white/10 bg-[#070b18] px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                            />
+                          </label>
+                          {paymentErrors.cardNumber && (
+                            <p
+                              id="card-number-error"
+                              className="text-xs text-red-300"
+                              role="alert"
+                            >
+                              {paymentErrors.cardNumber}
+                            </p>
+                          )}
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="block text-xs text-gray-300">
+                                Expiration
+                                <input
+                                  inputMode="numeric"
+                                  autoComplete="off"
+                                  maxLength={5}
+                                  value={form.expiration}
+                                  aria-invalid={Boolean(paymentErrors.expiration)}
+                                  aria-describedby={
+                                    paymentErrors.expiration
+                                      ? 'expiration-error'
+                                      : undefined
+                                  }
+                                  onChange={(event) => {
+                                    const digits = event.target.value
+                                      .replace(/\D/g, '')
+                                      .slice(0, 4)
+                                    updateForm(
+                                      'expiration',
+                                      digits.length > 2
+                                        ? `${digits.slice(0, 2)}/${digits.slice(2)}`
+                                        : digits
+                                    )
+                                  }}
+                                  placeholder="MM/YY"
+                                  className="mt-1 w-full rounded-lg border border-white/10 bg-[#070b18] px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                                />
+                              </label>
+                              {paymentErrors.expiration && (
+                                <p
+                                  id="expiration-error"
+                                  className="mt-1 text-xs text-red-300"
+                                  role="alert"
+                                >
+                                  {paymentErrors.expiration}
+                                </p>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-300">
+                                CVV
+                                <input
+                                  inputMode="numeric"
+                                  autoComplete="off"
+                                  maxLength={
+                                    getCardBrand(
+                                      form.cardNumber.replace(/\D/g, '')
+                                    ) === 'American Express'
+                                      ? 4
+                                      : 3
+                                  }
+                                  value={form.cvv}
+                                  aria-invalid={Boolean(paymentErrors.cvv)}
+                                  aria-describedby={
+                                    paymentErrors.cvv ? 'cvv-error' : undefined
+                                  }
+                                  onChange={(event) =>
+                                    updateForm(
+                                      'cvv',
+                                      event.target.value
+                                        .replace(/\D/g, '')
+                                        .slice(0, 4)
+                                    )
+                                  }
+                                  placeholder="CVV"
+                                  className="mt-1 w-full rounded-lg border border-white/10 bg-[#070b18] px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
+                                />
+                              </label>
+                              {paymentErrors.cvv && (
+                                <p
+                                  id="cvv-error"
+                                  className="mt-1 text-xs text-red-300"
+                                  role="alert"
+                                >
+                                  {paymentErrors.cvv}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="mt-3 rounded-lg border border-white/10 bg-[#070b18] p-3 text-xs text-gray-300" role="status">
+                        {paymentOptions.find(
+                          (option) => option.value === paymentMethod
+                        )?.label}{' '}
+                        is selected. This demo will simulate the payment method
+                        without contacting an external provider.
+                      </p>
+                    )}
+
+                    <div className="mt-2">
                       <label className="block text-xs text-gray-300">
                         Billing ZIP
                         <input
                           inputMode="numeric"
-                          autoComplete="postal-code"
-                          required
+                          autoComplete="off"
                           maxLength={5}
-                          pattern="\d{5}"
                           value={form.billingZip}
+                          aria-invalid={Boolean(paymentErrors.billingZip)}
+                          aria-describedby={
+                            paymentErrors.billingZip ? 'billing-zip-error' : undefined
+                          }
                           onChange={(event) =>
                             updateForm(
                               'billingZip',
-                              event.target.value.replace(/\D/g, '')
+                              event.target.value.replace(/\D/g, '').slice(0, 5)
                             )
                           }
                           className="mt-1 w-full rounded-lg border border-white/10 bg-[#070b18] px-3 py-2 text-sm text-white outline-none focus:border-sky-400"
                         />
                       </label>
+                      {paymentErrors.billingZip && (
+                        <p
+                          id="billing-zip-error"
+                          className="mt-1 text-xs text-red-300"
+                          role="alert"
+                        >
+                          {paymentErrors.billingZip}
+                        </p>
+                      )}
                     </div>
                   </section>
 
@@ -786,25 +956,29 @@ export default function CheckoutPage({
                     <dd>
                       {receipt.paymentMethod.type === 'card'
                         ? `Card ending in •••• ${receipt.paymentMethod.last4}`
-                        : 'Payment card'}
+                        : paymentMethodLabels[receipt.paymentMethod.type]}
                     </dd>
                   </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-gray-400">Expiration:</dt>
-                    <dd>{receipt.paymentMethod.expiration}</dd>
-                  </div>
+                  {receipt.paymentMethod.type === 'card' && (
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-gray-400">Expiration:</dt>
+                      <dd>{receipt.paymentMethod.expiration}</dd>
+                    </div>
+                  )}
                   <div className="flex justify-between gap-3">
                     <dt className="text-gray-400">Billing ZIP:</dt>
                     <dd>{receipt.billing.zipCode}</dd>
                   </div>
-                  <div className="flex justify-between gap-3">
-                    <dt className="text-gray-400">Security Code:</dt>
-                    <dd>
-                      {receipt.securityCodeVerified
-                        ? 'Verified'
-                        : 'Not verified'}
-                    </dd>
-                  </div>
+                  {receipt.paymentMethod.type === 'card' && (
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-gray-400">Security Code:</dt>
+                      <dd>
+                        {receipt.securityCodeVerified
+                          ? 'Verified'
+                          : 'Not verified'}
+                      </dd>
+                    </div>
+                  )}
                   <div className="flex justify-between gap-3 border-t border-white/10 pt-2 font-bold">
                     <dt>Total Paid Today:</dt>
                     <dd>${receipt.amountCharged.toFixed(2)}/mo</dd>

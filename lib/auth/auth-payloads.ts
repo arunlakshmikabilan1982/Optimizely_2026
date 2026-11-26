@@ -14,6 +14,20 @@ export type AuthUser = {
   email: string | null
 }
 
+export type AccountProfile = {
+  id: string
+  firstName: string
+  lastName: string
+  email: string
+  phoneNumber: string
+  role: string
+  isActive: boolean
+  isEmailVerified: boolean
+  createdAt: string | null
+  updatedAt: string | null
+  lastLoginAt: string | null
+}
+
 export type SessionResponse = {
   user: AuthUser | null
 }

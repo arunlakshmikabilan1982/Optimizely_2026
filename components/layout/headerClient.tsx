@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { authService } from '@/lib/auth/auth-client.service'
@@ -104,6 +104,24 @@ function BagIcon({ className }: { className?: string }) {
   )
 }
 
+function ProfileIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="8" r="4" />
+      <path d="M5 21a7 7 0 0 1 14 0" />
+    </svg>
+  )
+}
+
 function MenuIcon({ open, className }: { open: boolean; className?: string }) {
   return (
     <svg
@@ -132,6 +150,7 @@ export function HeaderClient({
   locale,
 }: HeaderClientProps) {
   const pathname = usePathname()
+  const router = useRouter()
 
   const [zipCode, setZipCode] = useState('90210')
   const [tempZip, setTempZip] = useState('90210')
@@ -139,6 +158,7 @@ export function HeaderClient({
   const [zipStatus, setZipStatus] = useState<ZipStatus | null>(null)
 
   const [isCartOpen, setIsCartOpen] = useState(false)
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false)
   const [selectedPackage, setSelectedPackage] =
     useState<SelectedPackage | null>(null)
   const [selectedAddOns, setSelectedAddOns] = useState<SelectedAddOn[]>([])
@@ -288,6 +308,7 @@ export function HeaderClient({
   // Close menus on route change
   useEffect(() => {
     setIsMenuOpen(false)
+    setIsProfileMenuOpen(false)
   }, [pathname])
 
   // Close modals on Escape
@@ -296,6 +317,7 @@ export function HeaderClient({
       if (e.key === 'Escape') {
         setIsZipModalOpen(false)
         setIsCartOpen(false)
+        setIsProfileMenuOpen(false)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -331,34 +353,23 @@ export function HeaderClient({
     try {
       await authService.logout()
       setAuthUser(null)
+      setIsProfileMenuOpen(false)
       setAuthMessage(null)
+      router.replace(`/${locale}/login`)
     } catch (error) {
       console.error('Unable to sign out.', error)
       setAuthMessage('Unable to sign out. Please try again.')
     }
   }
 
-  const authControls = authUser ? (
-    <>
-      <span className="max-w-36 truncate text-sm font-medium text-white">
-        {authUser.name || authUser.email || 'My account'}
-      </span>
-      <button
-        type="button"
-        onClick={signOut}
-        className="focus-visible-custom inline-flex items-center justify-center rounded-full border border-white/15 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/10"
-      >
-        Sign out
-      </button>
-    </>
-  ) : (
+  const authControls = !authUser ? (
     <Link
       href={`/${locale}/login`}
       className="bg-brand-blue shadow-brand-blue/30 focus-visible-custom inline-flex items-center justify-center rounded-full px-5 py-2 text-sm font-semibold text-white shadow-md transition-all hover:bg-blue-600"
     >
       Sign In
     </Link>
-  )
+  ) : null
 
   return (
     <>
@@ -419,9 +430,102 @@ export function HeaderClient({
           >
             {ctaText}
           </Link>
-          <div className="hidden items-center gap-3 sm:flex">
-            {authControls}
-          </div>
+          {authUser ? (
+            <div
+              className="relative"
+              onMouseEnter={() => setIsProfileMenuOpen(true)}
+              onMouseLeave={() => setIsProfileMenuOpen(false)}
+            >
+              <button
+                type="button"
+                onClick={() => setIsProfileMenuOpen((open) => !open)}
+                className="focus-visible-custom flex h-10 w-10 items-center justify-center rounded-full border border-white/15 bg-white/5 text-white transition-colors hover:bg-white/10"
+                aria-label="Toggle profile menu"
+                aria-expanded={isProfileMenuOpen}
+                aria-haspopup="menu"
+              >
+                <ProfileIcon className="h-5 w-5" />
+              </button>
+              {isProfileMenuOpen && (
+                <div
+                  role="menu"
+                  aria-label="Profile and site navigation"
+                  className="absolute right-0 top-full z-50 w-60 rounded-xl border border-white/10 bg-[#090e22] p-2 text-white shadow-2xl"
+                >
+                  <div className="border-b border-white/10 px-3 py-2">
+                    <p className="truncate text-sm font-semibold">
+                      {authUser.name || 'My account'}
+                    </p>
+                    {authUser.email && (
+                      <p className="truncate text-xs text-gray-400">
+                        {authUser.email}
+                      </p>
+                    )}
+                  </div>
+                  <Link
+                    href={`/${locale}/account`}
+                    role="menuitem"
+                    onClick={() => setIsProfileMenuOpen(false)}
+                    className="block rounded-lg px-3 py-2 text-sm font-semibold text-sky-300 hover:bg-white/5 hover:text-white"
+                  >
+                    Profile
+                  </Link>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setTempZip(zipCode)
+                      setIsZipModalOpen(true)
+                      setIsProfileMenuOpen(false)
+                    }}
+                    className="block w-full rounded-lg px-3 py-2 text-left text-sm text-gray-200 hover:bg-white/5 hover:text-white"
+                  >
+                    Check availability (ZIP)
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setIsCartOpen(true)
+                      setIsProfileMenuOpen(false)
+                    }}
+                    className="block w-full rounded-lg px-3 py-2 text-left text-sm text-gray-200 hover:bg-white/5 hover:text-white"
+                  >
+                    Order summary ({cartCount})
+                  </button>
+                  {links.map((item) => (
+                    <Link
+                      key={`profile-${item.href}-${item.label}`}
+                      href={item.href}
+                      role="menuitem"
+                      onClick={() => setIsProfileMenuOpen(false)}
+                      className="block rounded-lg px-3 py-2 text-sm text-gray-200 hover:bg-white/5 hover:text-white"
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                  <Link
+                    href={ctaHref}
+                    role="menuitem"
+                    onClick={() => setIsProfileMenuOpen(false)}
+                    className="block rounded-lg px-3 py-2 text-sm text-gray-200 hover:bg-white/5 hover:text-white"
+                  >
+                    {ctaText}
+                  </Link>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={signOut}
+                    className="mt-1 block w-full rounded-lg border-t border-white/10 px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5 hover:text-white"
+                  >
+                    Sign out
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="hidden items-center gap-3 sm:flex">{authControls}</div>
+          )}
 
           <button
             type="button"
@@ -460,9 +564,27 @@ export function HeaderClient({
           >
             {ctaText}
           </Link>
-          <div className="mt-2 flex items-center gap-3 px-3 py-2 sm:hidden">
-            {authControls}
-          </div>
+          {authUser ? (
+            <div className="mt-2 flex flex-col gap-1 border-t border-white/10 pt-2">
+              <Link
+                href={`/${locale}/account`}
+                className="rounded-lg px-3 py-2 text-sm font-semibold text-sky-300 hover:bg-white/5"
+              >
+                Profile
+              </Link>
+              <button
+                type="button"
+                onClick={signOut}
+                className="rounded-lg px-3 py-2 text-left text-sm text-gray-300 hover:bg-white/5 hover:text-white"
+              >
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <div className="mt-2 flex items-center gap-3 px-3 py-2 sm:hidden">
+              {authControls}
+            </div>
+          )}
         </nav>
       )}
       {authMessage && (

@@ -1,11 +1,31 @@
 import { apiManager, ApiRequestError } from '@/lib/api/api-manager'
 import { AUTH_ENDPOINTS } from '@/lib/auth/auth-endpoints'
 import type {
+  AccountProfile,
   LoginPayload,
   LoginResponse,
   RegisterPayload,
   SessionResponse,
 } from '@/lib/auth/auth-payloads'
+
+function isAccountProfile(value: unknown): value is AccountProfile {
+  if (typeof value !== 'object' || value === null) return false
+
+  const profile = value as Record<string, unknown>
+  return (
+    typeof profile.id === 'string' &&
+    typeof profile.firstName === 'string' &&
+    typeof profile.lastName === 'string' &&
+    typeof profile.email === 'string' &&
+    typeof profile.phoneNumber === 'string' &&
+    typeof profile.role === 'string' &&
+    typeof profile.isActive === 'boolean' &&
+    typeof profile.isEmailVerified === 'boolean' &&
+    (typeof profile.createdAt === 'string' || profile.createdAt === null) &&
+    (typeof profile.updatedAt === 'string' || profile.updatedAt === null) &&
+    (typeof profile.lastLoginAt === 'string' || profile.lastLoginAt === null)
+  )
+}
 
 async function postAuthAction(
   action: 'login' | 'register' | 'logout',
@@ -61,6 +81,28 @@ export const authService = {
       throw new Error('The session endpoint returned an invalid response.')
     }
     return data as SessionResponse
+  },
+
+  async getProfile(): Promise<AccountProfile> {
+    const result = await apiManager(AUTH_ENDPOINTS.profileProxy)
+    if (!result.ok) {
+      throw new ApiRequestError(
+        `Profile request failed (${result.status}).`,
+        result.status,
+        result.data
+      )
+    }
+
+    const data = result.data
+    if (
+      typeof data !== 'object' ||
+      data === null ||
+      !('user' in data) ||
+      !isAccountProfile(data.user)
+    ) {
+      throw new Error('The profile endpoint returned an invalid user.')
+    }
+    return data.user
   },
 
   async logout() {

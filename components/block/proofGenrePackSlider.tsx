@@ -35,7 +35,7 @@ export default function ProofGenrePackSlider({ testimonials }: ProofGenrePackSli
     };
   }, [isPlaying, testimonials.length]);
 
-  const handlePlayToggle = () => setIsPlaying(!isPlaying);
+  const handlePlayToggle = () => setIsPlaying((playing) => !playing);
 
   const StarIcon = () => (
     <svg className="w-5 h-5 text-[#0066FF] fill-current" viewBox="0 0 24 24">
@@ -98,6 +98,7 @@ export default function ProofGenrePackSlider({ testimonials }: ProofGenrePackSli
           onClick={handlePlayToggle}
           className="w-10 h-10 rounded-full bg-blue-50 hover:bg-blue-100 flex items-center justify-center transition-colors focus:outline-none"
           aria-label={isPlaying ? "Pause testimonial slideshow" : "Play testimonial slideshow"}
+          aria-pressed={isPlaying}
         >
           {isPlaying ? <PauseIcon /> : <PlayIcon />}
         </button>
@@ -105,7 +106,11 @@ export default function ProofGenrePackSlider({ testimonials }: ProofGenrePackSli
         <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => setCurrentIndex((prev) => prev === 0 ? testimonials.length - 1 : prev - 1)}
+            onClick={() =>
+              setCurrentIndex(
+                (prev) => (prev - 1 + testimonials.length) % testimonials.length
+              )
+            }
             className="w-10 h-10 rounded-full border border-slate-200 hover:border-slate-400 flex items-center justify-center transition-colors focus:outline-none"
             aria-label="Previous testimonial"
           >
@@ -114,7 +119,9 @@ export default function ProofGenrePackSlider({ testimonials }: ProofGenrePackSli
 
           <button
             type="button"
-            onClick={() => setCurrentIndex((prev) => prev === testimonials.length - 1 ? 0 : prev + 1)}
+            onClick={() =>
+              setCurrentIndex((prev) => (prev + 1) % testimonials.length)
+            }
             className="w-10 h-10 rounded-full border border-slate-200 hover:border-slate-400 flex items-center justify-center transition-colors focus:outline-none"
             aria-label="Next testimonial"
           >

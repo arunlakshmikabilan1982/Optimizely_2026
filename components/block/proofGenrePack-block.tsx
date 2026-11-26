@@ -11,20 +11,26 @@ export default function ProofOfGenrePack({
 }: ProofOfGenrePackProps) {
   
   // 1. Prepare and clean data on the Server
-  const formattedTestimonials = ProofOfGenrePackItems?.map((testimonial, index) => {
-    const testimonialItem = castContent<ProofOfGenrePackItem>(
-      testimonial as SafeContent,
-      'ProofOfGenrePackItem'
-    );
+  const formattedTestimonials =
+    ProofOfGenrePackItems?.flatMap((testimonial, index) => {
+      if (!testimonial) return []
 
-    return {
-      id: index,
-      heading: testimonialItem?.Comment ?? "Default Heading",
-      rating: 5,
-      quote: testimonialItem?.CommentDescription ?? "Default quote text.",
-      CommenterName: testimonialItem?.CommenterName ?? "Default Name",
-    };
-  }) || [];
+      const testimonialItem = castContent<ProofOfGenrePackItem>(
+        { ...testimonial, __typename: 'ProofOfGenrePackItem' } as SafeContent,
+        'ProofOfGenrePackItem'
+      )
+      if (!testimonialItem) return []
+
+      return [
+        {
+          id: index,
+          heading: testimonialItem.Comment ?? 'Default Heading',
+          rating: 5,
+          quote: testimonialItem.CommentDescription ?? 'Default quote text.',
+          CommenterName: testimonialItem.CommenterName ?? 'Default Name',
+        },
+      ]
+    }) ?? []
 
   return (
     <section className="w-full max-w-5xl mx-auto px-4 py-12 text-center bg-white">

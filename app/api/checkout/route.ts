@@ -1,5 +1,12 @@
 import { randomUUID } from 'node:crypto'
 import { NextResponse } from 'next/server'
+import {
+  getBillingZipError,
+  getCardBrand,
+  getCardNumberError,
+  getCvvError,
+  getExpirationError,
+} from '@/lib/utils/payment-validation'
 
 type CheckoutRequest = {
   fullName: unknown
@@ -10,23 +17,22 @@ type CheckoutRequest = {
   billingZip: unknown
   otp: unknown
   amount: unknown
+  paymentMethod?: unknown
 }
+
+type PaymentMethod = 'card' | 'paypal' | 'apple-pay' | 'google-pay'
 
 function isCheckoutRequest(value: unknown): value is CheckoutRequest {
   return typeof value === 'object' && value !== null
 }
 
-function isFutureExpiration(expiration: string): boolean {
-  const match = /^(0[1-9]|1[0-2])\/(\d{2})$/.exec(expiration)
-  if (!match) return false
-
-  const month = Number(match[1])
-  const year = 2000 + Number(match[2])
-  const expirationDate = new Date(year, month)
-  const currentMonth = new Date()
-  currentMonth.setDate(1)
-  currentMonth.setHours(0, 0, 0, 0)
-  return expirationDate > currentMonth
+function isPaymentMethod(value: unknown): value is PaymentMethod {
+  return (
+    value === 'card' ||
+    value === 'paypal' ||
+    value === 'apple-pay' ||
+    value === 'google-pay'
+  )
 }
 
 export async function POST(request: Request) {
@@ -56,7 +62,9 @@ export async function POST(request: Request) {
     billingZip,
     otp,
     amount,
+    paymentMethod,
   } = body
+  const selectedPaymentMethod = paymentMethod ?? 'card'
   if (typeof otp !== 'string' || !/^\d{6}$/.test(otp) || otp !== '000000') {
     return NextResponse.json(
       {
@@ -75,15 +83,18 @@ export async function POST(request: Request) {
   const normalizedExpiration = typeof expiration === 'string' ? expiration : ''
   const normalizedBillingZip = typeof billingZip === 'string' ? billingZip : ''
   const normalizedAmount = typeof amount === 'number' ? amount : Number.NaN
+  const cardDetailsValid =
+    selectedPaymentMethod !== 'card' ||
+    (getCardNumberError(cleanCard) === null &&
+      getExpirationError(normalizedExpiration) === null &&
+      typeof cvv === 'string' &&
+      getCvvError(cvv, getCardBrand(cleanCard)) === null)
   const validDetails =
+    isPaymentMethod(selectedPaymentMethod) &&
     normalizedFullName.length > 0 &&
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail) &&
-    cleanCard.length >= 15 &&
-    cleanCard.length <= 19 &&
-    isFutureExpiration(normalizedExpiration) &&
-    typeof cvv === 'string' &&
-    /^\d{3,4}$/.test(cvv) &&
-    /^\d{5}$/.test(normalizedBillingZip) &&
+    cardDetailsValid &&
+    getBillingZipError(normalizedBillingZip) === null &&
     Number.isFinite(normalizedAmount) &&
     normalizedAmount > 0 &&
     normalizedAmount <= 10000
@@ -100,7 +111,7 @@ export async function POST(request: Request) {
 
   await new Promise((resolve) => setTimeout(resolve, 1500))
 
-  if (/^0+$/.test(cleanCard)) {
+  if (selectedPaymentMethod === 'card' && /^0+$/.test(cleanCard)) {
     return NextResponse.json(
       {
         success: false,
@@ -117,15 +128,18 @@ export async function POST(request: Request) {
       fullName: normalizedFullName,
       email: normalizedEmail,
     },
-    paymentMethod: {
-      type: 'card',
-      last4: cleanCard.slice(-4),
-      expiration: normalizedExpiration,
-    },
+    paymentMethod:
+      selectedPaymentMethod === 'card'
+        ? {
+            type: 'card',
+            last4: cleanCard.slice(-4),
+            expiration: normalizedExpiration,
+          }
+        : { type: selectedPaymentMethod },
     billing: {
       zipCode: normalizedBillingZip,
     },
-    securityCodeVerified: true,
+    securityCodeVerified: selectedPaymentMethod === 'card',
     amountCharged: normalizedAmount,
     timestamp: new Date().toISOString(),
   })
