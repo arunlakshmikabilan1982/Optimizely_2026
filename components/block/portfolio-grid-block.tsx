@@ -19,8 +19,19 @@ export interface SelectedPackage {
   highlights: string[]
 }
 
-export const SELECTED_PACKAGE_KEY = 'selectedPackage'
+export interface SelectedAddOn {
+  id: string
+  name: string
+  priceMonthly: number
+  pricePeriod: string
+}
+
+export const SELECTED_PACKAGE_KEY = 'selectedBasePackage'
+export const SELECTED_ADD_ONS_KEY = 'selectedAddOns'
 export const PACKAGE_SELECTED_EVENT = 'package-selected'
+export const ADD_ON_SELECTED_EVENT = 'addon-selected'
+export const ADD_ON_REMOVED_EVENT = 'addon-removed'
+export const CART_CLEARED_EVENT = 'cart-cleared'
 
 export default function PortfolioGridBlock({
   title,
@@ -89,7 +100,7 @@ export default function PortfolioGridBlock({
           return (
             <div
               key={index}
-              className={`relative flex min-h-[680px] flex-col justify-between rounded-2xl border p-6 text-white shadow-lg transition-all duration-300 hover:-translate-y-1 hover:border-blue-500 hover:bg-[#00132d] hover:shadow-xl hover:shadow-blue-950/40 ${
+              className={`relative flex h-full flex-col rounded-2xl border p-6 text-white shadow-lg transition-all duration-300 hover:-translate-y-1 hover:border-blue-500 hover:bg-[#00132d] hover:shadow-xl hover:shadow-blue-950/40 ${
                 isSelected
                   ? 'border-blue-500 bg-[#00132d] shadow-xl shadow-blue-950/40'
                   : 'border-white/10 bg-[#080b1b] shadow-black/20'
@@ -125,7 +136,7 @@ export default function PortfolioGridBlock({
 
               <button
                 onClick={() => handleSelect(pkg)}
-                className={`w-full rounded-full py-3 font-bold text-xs transition-all focus-visible-custom ${
+                className={`mt-auto w-full rounded-full py-3 text-xs font-bold transition-all focus-visible-custom ${
                   isSelected
                     ? 'bg-[#006dff] text-white shadow-lg shadow-blue-900/40 hover:bg-blue-600'
                     : 'bg-[#202432] text-white hover:bg-[#006dff] hover:shadow-lg hover:shadow-blue-900/40'

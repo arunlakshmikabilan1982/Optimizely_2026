@@ -5,7 +5,11 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useState, type FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
+  ADD_ON_REMOVED_EVENT,
+  CART_CLEARED_EVENT,
+  SELECTED_ADD_ONS_KEY,
   SELECTED_PACKAGE_KEY,
+  type SelectedAddOn,
   type SelectedPackage,
 } from '@/components/block/portfolio-grid-block'
 import { Icon } from '@/components/ui/Icon'
@@ -42,8 +46,10 @@ type CheckoutReceipt = {
 interface CheckoutPageProps {
   locale: string
   initialPackage?: SelectedPackage | null
+  initialAddOns?: SelectedAddOn[]
   initialStep?: 'cart' | 'checkout'
   zipCode?: string
+  cartNotice?: string | null
   onClose?: () => void
 }
 
@@ -59,6 +65,23 @@ function isSelectedPackage(value: unknown): value is SelectedPackage {
     Array.isArray(candidate.highlights) &&
     candidate.highlights.every((item) => typeof item === 'string')
   )
+}
+
+function isSelectedAddOn(value: unknown): value is SelectedAddOn {
+  if (typeof value !== 'object' || value === null) return false
+
+  const candidate = value as Record<string, unknown>
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.name === 'string' &&
+    typeof candidate.priceMonthly === 'number' &&
+    Number.isFinite(candidate.priceMonthly) &&
+    typeof candidate.pricePeriod === 'string'
+  )
+}
+
+function isSelectedAddOnList(value: unknown): value is SelectedAddOn[] {
+  return Array.isArray(value) && value.every(isSelectedAddOn)
 }
 
 function isCheckoutReceipt(value: unknown): value is CheckoutReceipt {
@@ -106,14 +129,19 @@ const initialForm: CheckoutFormValues = {
 export default function CheckoutPage({
   locale,
   initialPackage = null,
+  initialAddOns,
   initialStep = 'checkout',
   zipCode = '90210',
+  cartNotice,
   onClose,
 }: CheckoutPageProps) {
   const router = useRouter()
   const [isMounted, setIsMounted] = useState(false)
   const [selectedPackage, setSelectedPackage] =
     useState<SelectedPackage | null>(initialPackage)
+  const [selectedAddOns, setSelectedAddOns] = useState<SelectedAddOn[]>(
+    initialAddOns ?? []
+  )
   const [step, setStep] = useState<CheckoutStep>(initialStep)
   const [form, setForm] = useState(initialForm)
   const [otp, setOtp] = useState('')
@@ -134,10 +162,27 @@ export default function CheckoutPage({
       } else {
         console.error('The saved package selection has an invalid format.')
       }
+
+      const savedAddOns = sessionStorage.getItem(SELECTED_ADD_ONS_KEY)
+      if (savedAddOns) {
+        const parsedAddOns: unknown = JSON.parse(savedAddOns)
+        if (isSelectedAddOnList(parsedAddOns)) {
+          setSelectedAddOns(parsedAddOns)
+        } else {
+          console.error('The saved add-on selection has an invalid format.')
+          sessionStorage.removeItem(SELECTED_ADD_ONS_KEY)
+        }
+      }
     } catch (error) {
-      console.error('Unable to load the selected package.', error)
+      console.error('Unable to load the saved cart.', error)
     }
   }, [initialPackage])
+
+  useEffect(() => {
+    if (initialAddOns) {
+      setSelectedAddOns(initialAddOns)
+    }
+  }, [initialAddOns])
 
   useEffect(() => {
     const bodyOverflow = document.body.style.overflow
@@ -179,6 +224,49 @@ export default function CheckoutPage({
     setForm((current) => ({ ...current, [field]: value }))
   }
 
+  const clearSavedPackage = () => {
+    try {
+      sessionStorage.removeItem(SELECTED_PACKAGE_KEY)
+      sessionStorage.removeItem(SELECTED_ADD_ONS_KEY)
+    } catch (error) {
+      console.error('Unable to clear the saved cart.', error)
+    }
+    window.dispatchEvent(new Event(CART_CLEARED_EVENT))
+  }
+
+  const removeSelectedPackage = () => {
+    setSelectedPackage(null)
+    setSelectedAddOns([])
+    clearSavedPackage()
+  }
+
+  const removeSelectedAddOn = (id: string) => {
+    const updatedAddOns = selectedAddOns.filter((addOn) => addOn.id !== id)
+    setSelectedAddOns(updatedAddOns)
+    try {
+      if (updatedAddOns.length > 0) {
+        sessionStorage.setItem(
+          SELECTED_ADD_ONS_KEY,
+          JSON.stringify(updatedAddOns)
+        )
+      } else {
+        sessionStorage.removeItem(SELECTED_ADD_ONS_KEY)
+      }
+    } catch (error) {
+      console.error('Unable to update selected add-ons.', error)
+    }
+    window.dispatchEvent(
+      new CustomEvent<string>(ADD_ON_REMOVED_EVENT, { detail: id })
+    )
+  }
+
+  const addOnTotal = selectedAddOns.reduce(
+    (total, addOn) => total + addOn.priceMonthly,
+    0
+  )
+  const totalPrice = (selectedPackage?.priceMonthly ?? 0) + addOnTotal
+  const formattedTotal = totalPrice.toFixed(2)
+
   const continueToOtp = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!selectedPackage) return
@@ -201,7 +289,7 @@ export default function CheckoutPage({
         body: JSON.stringify({
           ...form,
           otp,
-          amount: selectedPackage.priceMonthly,
+          amount: totalPrice,
         }),
       })
       const result: unknown = await response.json()
@@ -225,6 +313,7 @@ export default function CheckoutPage({
 
       setReceipt(result)
       setStep('success')
+      clearSavedPackage()
     } catch (error) {
       console.error('Unable to complete checkout.', error)
       setErrorMessage(
@@ -294,10 +383,19 @@ export default function CheckoutPage({
                     {selectedPackage.name}
                   </h2>
                 </div>
-                <span className="whitespace-nowrap text-lg font-extrabold">
-                  ${formattedPrice}
-                  <span className="text-xs font-normal text-gray-400">/mo</span>
-                </span>
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  <span className="whitespace-nowrap text-lg font-extrabold">
+                    ${formattedPrice}
+                    <span className="text-xs font-normal text-gray-400">/mo</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={removeSelectedPackage}
+                    className="text-xs text-gray-400 hover:text-white"
+                  >
+                    Remove
+                  </button>
+                </div>
               </div>
               <p className="mb-2 text-xs text-gray-400">
                 {selectedPackage.channelsCount.replace(/\s*channels?$/i, '')}{' '}
@@ -315,19 +413,47 @@ export default function CheckoutPage({
             <div className="mt-8">
               <div className="mb-2 flex items-center justify-between gap-2">
                 <h3 className="text-xs font-semibold text-gray-300">
-                  Selected Add-ons (0)
+                  Selected Add-ons ({selectedAddOns.length})
                 </h3>
                 <Link
-                  href={`/${locale}/genre`}
+                  href={`/${locale}/packages#genre-packs`}
                   onClick={closeDrawer}
                   className="text-xs font-semibold text-sky-300 hover:underline"
                 >
                   Browse Add-ons
                 </Link>
               </div>
-              <p className="rounded-lg border border-dashed border-white/10 bg-white/5 px-3 py-2 text-center text-xs italic text-gray-400">
-                No genre packs or premium add-ons added yet.
-              </p>
+              {selectedAddOns.length > 0 ? (
+                <ul className="space-y-2">
+                  {selectedAddOns.map((addOn) => (
+                    <li
+                      key={addOn.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2"
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm text-white">
+                          {addOn.name}
+                        </span>
+                        <span className="text-xs text-gray-400">
+                          ${addOn.priceMonthly.toFixed(2)} {addOn.pricePeriod}
+                        </span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removeSelectedAddOn(addOn.id)}
+                        className="shrink-0 text-xs text-gray-400 hover:text-white"
+                        aria-label={`Remove ${addOn.name}`}
+                      >
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="rounded-lg border border-dashed border-white/10 bg-white/5 px-3 py-2 text-center text-xs italic text-gray-400">
+                  No genre packs or premium add-ons added yet.
+                </p>
+              )}
             </div>
 
             <div className="mt-6 space-y-2 border-t border-white/10 pt-3 text-xs text-green-400">
@@ -353,7 +479,7 @@ export default function CheckoutPage({
                   Estimated Monthly Total:
                 </span>
                 <span className="whitespace-nowrap text-xl font-black">
-                  ${formattedPrice}
+                  ${formattedTotal}
                   <span className="text-xs font-normal text-gray-400">/mo</span>
                 </span>
               </div>
@@ -372,8 +498,13 @@ export default function CheckoutPage({
           </section>
         ) : !selectedPackage ? (
           <div className="rounded-xl border border-white/10 bg-white/5 p-4">
+            {cartNotice && (
+              <p className="mb-2 text-sm text-amber-200" role="status">
+                {cartNotice}
+              </p>
+            )}
             <p className="text-sm text-gray-300">
-              Select a package before continuing.
+              Your cart is empty.
             </p>
             <Link
               href={`/${locale}/packages`}
@@ -549,7 +680,7 @@ export default function CheckoutPage({
                     type="submit"
                     className="w-full rounded-full bg-[#0875ff] py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-500/30 transition-colors hover:bg-blue-600"
                   >
-                    Complete Purchase • ${formattedPrice}/mo
+                    Complete Purchase • ${formattedTotal}/mo
                   </button>
                 </form>
               </section>

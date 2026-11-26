@@ -2,6 +2,18 @@
 import React, { useRef } from 'react';
 import { PackageCardItem, PackageCardsCarousel as PackageCardsProps } from '@/lib/optimizely/types/generated';
 import { castContent, SafeContent } from '@/lib/optimizely/types/typeUtils';
+import {
+  ADD_ON_SELECTED_EVENT,
+  type SelectedAddOn,
+} from './portfolio-grid-block';
+
+function parsePrice(value: string | null | undefined): number | null {
+  const price = value?.replace(/,/g, '').match(/\d+(?:\.\d{1,2})?/)?.[0];
+  if (!price) return null;
+
+  const amount = Number(price);
+  return Number.isFinite(amount) ? amount : null;
+}
 
 export default function PackageCardsCarousel({ Title, PackageItems }: PackageCardsProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -15,7 +27,10 @@ export default function PackageCardsCarousel({ Title, PackageItems }: PackageCar
   };
 
   return (
-    <section className="w-full bg-[#0a0711] py-16 px-4 sm:px-6 lg:px-8 text-white relative">
+    <section
+      id={Title?.toLowerCase().includes('genre') ? 'genre-packs' : undefined}
+      className="relative w-full scroll-mt-24 bg-[#0a0711] px-4 py-16 text-white sm:px-6 lg:px-8"
+    >
       <div className="max-w-7xl mx-auto">
         
         {/* Section Header & Carousel Controls */}
@@ -68,7 +83,19 @@ export default function PackageCardsCarousel({ Title, PackageItems }: PackageCar
             const specialPrice = packageItem?.SpecialPrice;
             const price = packageItem?.Price;
             const pricePeriod = packageItem?.PricePeriod;
-            const ctaUrl = packageItem?.CTA?.url?.default;
+            const priceMonthly = parsePrice(price);
+            const addOn: SelectedAddOn | null =
+              title && priceMonthly !== null
+                ? {
+                    id: String(
+                      packageItem?._id ??
+                        title.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+                    ),
+                    name: title,
+                    priceMonthly,
+                    pricePeriod: pricePeriod ?? '/mo',
+                  }
+                : null;
 
             return (
               <div
@@ -163,15 +190,24 @@ export default function PackageCardsCarousel({ Title, PackageItems }: PackageCar
                   </div>
 
                   {/* Action Arrow Button */}
-                  <a
-                    href={ctaUrl ?? "#"}
-                    className="w-9 h-9 rounded-full bg-purple-950/80 hover:bg-purple-800 text-white flex items-center justify-center transition-colors shadow focus:outline-none"
-                    aria-label="View package details"
+                  <button
+                    type="button"
+                    disabled={!addOn}
+                    onClick={() => {
+                      if (!addOn) return;
+                      window.dispatchEvent(
+                        new CustomEvent<SelectedAddOn>(ADD_ON_SELECTED_EVENT, {
+                          detail: addOn,
+                        }),
+                      );
+                    }}
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-purple-950/80 text-white shadow transition-colors hover:bg-purple-800 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                    aria-label={title ? `Add ${title} to cart` : 'Add package to cart'}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 5l7 7-7 7" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 5v14m-7-7h14" />
                     </svg>
-                  </a>
+                  </button>
                 </div>
 
               </div>

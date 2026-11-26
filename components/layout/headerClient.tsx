@@ -2,13 +2,18 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { authService } from '@/lib/auth/auth-client.service'
 import type { AuthUser } from '@/lib/auth/auth-payloads'
 import {
+  ADD_ON_REMOVED_EVENT,
+  ADD_ON_SELECTED_EVENT,
+  CART_CLEARED_EVENT,
   PACKAGE_SELECTED_EVENT,
+  SELECTED_ADD_ONS_KEY,
   SELECTED_PACKAGE_KEY,
+  type SelectedAddOn,
   type SelectedPackage,
 } from '@/components/block/portfolio-grid-block'
 import CheckoutPage from '@/components/checkout/checkout-page'
@@ -43,6 +48,23 @@ function isSelectedPackage(value: unknown): value is SelectedPackage {
       (highlight) => typeof highlight === 'string'
     )
   )
+}
+
+function isSelectedAddOn(value: unknown): value is SelectedAddOn {
+  if (typeof value !== 'object' || value === null) return false
+
+  const addOn = value as Record<string, unknown>
+  return (
+    typeof addOn.id === 'string' &&
+    typeof addOn.name === 'string' &&
+    typeof addOn.priceMonthly === 'number' &&
+    Number.isFinite(addOn.priceMonthly) &&
+    typeof addOn.pricePeriod === 'string'
+  )
+}
+
+function isSelectedAddOnList(value: unknown): value is SelectedAddOn[] {
+  return Array.isArray(value) && value.every(isSelectedAddOn)
 }
 
 function MapPinIcon({ className }: { className?: string }) {
@@ -119,7 +141,25 @@ export function HeaderClient({
   const [isCartOpen, setIsCartOpen] = useState(false)
   const [selectedPackage, setSelectedPackage] =
     useState<SelectedPackage | null>(null)
-  const cartCount = selectedPackage ? 1 : 0
+  const [selectedAddOns, setSelectedAddOns] = useState<SelectedAddOn[]>([])
+  const [cartNotice, setCartNotice] = useState<string | null>(null)
+  const selectedPackageRef = useRef<SelectedPackage | null>(null)
+  const selectedAddOnsRef = useRef<SelectedAddOn[]>([])
+  const cartCount = (selectedPackage ? 1 : 0) + selectedAddOns.length
+
+  const updateSelectedAddOns = (addOns: SelectedAddOn[]) => {
+    selectedAddOnsRef.current = addOns
+    setSelectedAddOns(addOns)
+    try {
+      if (addOns.length > 0) {
+        sessionStorage.setItem(SELECTED_ADD_ONS_KEY, JSON.stringify(addOns))
+      } else {
+        sessionStorage.removeItem(SELECTED_ADD_ONS_KEY)
+      }
+    } catch (error) {
+      console.error('Unable to save selected add-ons.', error)
+    }
+  }
 
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
@@ -131,14 +171,30 @@ export function HeaderClient({
       if (savedPackage) {
         const parsedPackage: unknown = JSON.parse(savedPackage)
         if (isSelectedPackage(parsedPackage)) {
+          selectedPackageRef.current = parsedPackage
           setSelectedPackage(parsedPackage)
         } else {
           console.error('The saved package selection has an invalid format.')
           sessionStorage.removeItem(SELECTED_PACKAGE_KEY)
         }
       }
+
+      const savedAddOns = sessionStorage.getItem(SELECTED_ADD_ONS_KEY)
+      if (savedAddOns) {
+        const parsedAddOns: unknown = JSON.parse(savedAddOns)
+        if (
+          selectedPackageRef.current &&
+          isSelectedAddOnList(parsedAddOns)
+        ) {
+          selectedAddOnsRef.current = parsedAddOns
+          setSelectedAddOns(parsedAddOns)
+        } else {
+          console.error('The saved add-on selection has an invalid format.')
+          sessionStorage.removeItem(SELECTED_ADD_ONS_KEY)
+        }
+      }
     } catch (error) {
-      console.error('Unable to restore the selected package.', error)
+      console.error('Unable to restore the saved cart.', error)
     }
 
     const handlePackageSelected = (event: Event) => {
@@ -148,13 +204,62 @@ export function HeaderClient({
         return
       }
 
+      selectedPackageRef.current = detail
       setSelectedPackage(detail)
+      setCartNotice(null)
       setIsCartOpen(true)
     }
 
+    const handleAddOnSelected = (event: Event) => {
+      const detail = (event as CustomEvent<unknown>).detail
+      if (!isSelectedAddOn(detail)) {
+        console.error('The selected add-on event has an invalid format.')
+        return
+      }
+
+      if (!selectedPackageRef.current) {
+        setCartNotice('Select a base package before adding genre packs.')
+        setIsCartOpen(true)
+        return
+      }
+
+      const currentAddOns = selectedAddOnsRef.current
+      if (!currentAddOns.some((addOn) => addOn.id === detail.id)) {
+        updateSelectedAddOns([...currentAddOns, detail])
+      }
+      setCartNotice(null)
+      setIsCartOpen(true)
+    }
+
+    const handleAddOnRemoved = (event: Event) => {
+      const id = (event as CustomEvent<unknown>).detail
+      if (typeof id !== 'string') {
+        console.error('The removed add-on event has an invalid format.')
+        return
+      }
+
+      updateSelectedAddOns(
+        selectedAddOnsRef.current.filter((addOn) => addOn.id !== id)
+      )
+    }
+
+    const handleCartCleared = () => {
+      selectedPackageRef.current = null
+      setSelectedPackage(null)
+      updateSelectedAddOns([])
+      setCartNotice(null)
+    }
+
     window.addEventListener(PACKAGE_SELECTED_EVENT, handlePackageSelected)
-    return () =>
+    window.addEventListener(ADD_ON_SELECTED_EVENT, handleAddOnSelected)
+    window.addEventListener(ADD_ON_REMOVED_EVENT, handleAddOnRemoved)
+    window.addEventListener(CART_CLEARED_EVENT, handleCartCleared)
+    return () => {
       window.removeEventListener(PACKAGE_SELECTED_EVENT, handlePackageSelected)
+      window.removeEventListener(ADD_ON_SELECTED_EVENT, handleAddOnSelected)
+      window.removeEventListener(ADD_ON_REMOVED_EVENT, handleAddOnRemoved)
+      window.removeEventListener(CART_CLEARED_EVENT, handleCartCleared)
+    }
   }, [])
 
   useEffect(() => {
@@ -432,8 +537,10 @@ export function HeaderClient({
         <CheckoutPage
           locale={locale}
           initialPackage={selectedPackage}
+          initialAddOns={selectedAddOns}
           initialStep="cart"
           zipCode={zipCode}
+          cartNotice={cartNotice}
           onClose={() => setIsCartOpen(false)}
         />
       )}
